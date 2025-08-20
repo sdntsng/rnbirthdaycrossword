@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Birthday Crossword</title>
+		<style>
+			:root{--accent:#b83280;--accent-2:#ff8a00;--muted:#f8fafc}
+			body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; margin:0; padding:24px; background:linear-gradient(180deg,#fff7fb 0%,#fff 60%)}
+			header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+			h1{font-size:22px;margin:0;color:var(--accent)}
+			.subtitle{color:#334155}
+			.app{display:flex;gap:18px;align-items:flex-start}
+			.panel{background:#fff;border:1px solid #f1e7ef;border-radius:12px;padding:14px;box-shadow:0 6px 20px rgba(184,28,64,0.06)}
+			.right{flex:1}
+			.tableWrap{display:flex;gap:12px}
+			.controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+			button{background:var(--accent);color:#fff;border:none;padding:10px 12px;border-radius:10px;cursor:pointer;font-weight:600}
+			button.secondary{background:var(--accent-2)}
+			button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(184,50,128,0.12)}
+			.clues{max-height:420px;overflow:auto;margin-top:10px}
+			.clue-item{margin:6px 0}
+			input.answer{width:100%;padding:8px;margin-top:6px;border-radius:8px;border:1px solid #eee}
+			.editor-row{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px dashed #f3e7ef}
+			.editor-row .clue{flex:1}
+			.editor-row .answer{flex:0 0 320px}
+			.note{color:#475569;font-size:13px}
+			/* grid styles */
+			table.grid{border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden}
+			table.grid td{width:36px;height:36px;border:1px solid #e9dfe8;position:relative;background:#fff}
+			table.grid td.empty{background:#f9f5f8}
+			.cell-number{position:absolute;left:4px;top:2px;font-size:10px;color:#8b5b7b}
+			.cell-letter{font-weight:700;font-size:16px;color:#2c0735;display:block;line-height:36px}
+			.correct-word{background:#d1fae5 !important;}
+			.solve-input.correct{border-color:#16a34a;background:#ecfdf5}
+			.solve-input.incorrect{border-color:#dc2626;background:#fff1f2}
+			.tableWrap .panel{flex:1}
+			.headerBar{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+		</style>
+	</head>
+	<body>
+		<div id="homeScreen" style="display:flex;flex-direction:column;align-items:center;gap:24px;max-width:880px;margin:0 auto;text-align:center;padding-top:12px">
+			<img src="images/cover.jpg" alt="Cover" style="max-width:100%;border-radius:22px;box-shadow:0 10px 34px rgba(0,0,0,.20)" />
+			<h1 style="margin:0;font-size:44px;background:linear-gradient(90deg,#b83280,#ff8a00);-webkit-background-clip:text;color:transparent">Birthday Adventure Crossword</h1>
+			<p style="font-size:18px;line-height:1.55;color:#513347;max-width:760px;margin:0">Solve each clue to unlock pieces of our day. Words light up green when correct. The image evolves as you progress.</p>
+			<ol style="text-align:left;max-width:640px;line-height:1.55;color:#5b4a55;font-size:15px;padding-left:22px;margin:0">
+				<li>Click <strong>Begin</strong> to generate the puzzle.</li>
+				<li>Use the <strong>Solve</strong> tab to enter answers (length shown).</li>
+				<li>Return to <strong>Puzzle</strong> to view the grid & evolving image.</li>
+				<li>As you complete the answers you will unlock the associated experience.</li>
+				<li>Finish all answers to reveal the final stage!</li>
+			</ol>
+			<button id="beginBtn" style="font-size:19px;padding:16px 40px;border-radius:50px;cursor:pointer;background:#b83280;color:#fff;border:none;font-weight:700;letter-spacing:.5px;box-shadow:0 6px 20px rgba(184,50,128,.4);margin-top:4px">Begin</button>
+			<div class="note" style="font-size:12px">Progress image swaps as you solve clues.</div>
+		</div>
+
+		<div class="app" id="appShell" style="display:none">
+			<div class="panel right" style="width:100%">
+				<div class="controls">
+					<button id="tabPuzzle" class="ghost">Puzzle</button>
+					<button id="tabSolve" class="ghost">Solve</button>
+					<div style="flex:1"></div>
+					<button id="exportBtn" class="secondary">Export SVG</button>
+				</div>
+				<div id="puzzleView">
+					<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start">
+						<div id="imageStage" style="flex:0 0 260px;display:flex;flex-direction:column;align-items:center;gap:10px">
+							<img id="progressImg" src="images/cover.jpg" alt="Progress" style="width:100%;height:auto;border-radius:18px;box-shadow:0 6px 24px rgba(0,0,0,.18);" />
+							<div id="progress" class="note" style="font-weight:600"></div>
+						</div>
+						<div style="flex:1;min-width:340px">
+							<div id="boardContainer"></div>
+						</div>
+					</div>
+					<div class="clues" style="margin-top:18px">
+						<h3>Across</h3>
+						<div id="acrossList"></div>
+						<h3>Down</h3>
+						<div id="downList"></div>
+					</div>
+				</div>
+				<div id="solveView" style="display:none">
+					<div id="solveList" class="clues"></div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			// Provided clues with final short answer keys
+			const entries = [
+				{clue: 'I am a “bath” with no water, just musical waves surrounding you in the dark. What am I?', solution:'AUDIUM'},
+				{clue: 'In the city’s green heart, this quest lets you sample gardens, ponds, art, and even a boat. Name the type of place!', solution:'PARK'},
+				{clue: 'In which beverage’s honor will you wander amid koi, pagodas, and peace, echoing an ancient culture continents away from here?', solution:'MATCHA'},
+				{clue: 'Step into this Victorian glass palace, where rare blooms and humid air make you feel like you’re in a jungle. What’s another word for “sanctuary”?', solution:'CONSERVATORY'},
+				{clue: '“What’s in a name? That which we call a rose…” What garden dost thou seek, fair traveler?', solution:'SHAKESPEARE'},
+				{clue: 'For cheerful splashing and rowing with your sweetheart, which park lake is the city’s favorite date spot?', solution:'STOWLAKE'},
+				{clue: 'This iconic, copper-topped art spot has sweeping views from its tower. Here, we live while we’re ______.', solution:'YOUNG'},
+				{clue: 'Lose yourself on winding paths—forest bathing, redwoods, and worldwide rare plants unite here.', solution:'BOTANICAL'},
+				{clue: 'Name of a girl who glides, twirls, and laughs in the shadow of a famous art museum—where Sunday swing is always free!', solution:'LINDY'},
+				{clue: 'Where will you eat kimchi and BBQ for lunch, just steps from Golden Gate Park?', solution:'SONAMU'},
+				{clue: 'This legendary, beatnik-filled haven has walls lined with poems and revolution. Browse for an hour or a lifetime.', solution:'CITYLIGHTS'},
+				{clue: 'By King Street, you’ll unwind as two—relaxing side by side as experts work their magic.', solution:'MASSAGE'},
+				{clue: 'In Lower Haight, step into a garage where boots, laughter, and country steps fill the evening. What should we do here?', solution:'LINEDANCING'},
+				{clue: 'A sunrise trek by the world’s most famous bridge. Pick your path - three routes, tide or towers! But where?', solution:'GOLDENGATE'},
+				{clue: 'Start at the Sutro Baths—where every step along the cliffs brings a new angle on the Bridge.', solution:'LANDSEND'},
+				{clue: 'Spiraling down sandy steps to sea batteries, which golden hour trail hugs the bluffs?', solution:'BATTERIES'},
+				{clue: 'For Bridge photos above the morning fog, which Marin-side hill claims the city’s best sunrise?', solution:'SLACKER'},
+				{clue: 'After long hikes and sunlit plans, this night delivers heart-flips and food - instead of subtitles, you’ll be watching each other’s smiles. What genre shall we watch to set the mood?', solution:'KDRAMA'},
+				{clue: 'Your birthday adventure takes you across water at dusk—where echoes of notorious names and locked cells await. Where are you headed?', solution:'ALCATRAZ'},
+			];
+
+			const GRID_SIZE = 25;
+			// helper: produce a short key-term from a full answer
+			function keyTerm(s){
+				// if user supplies short single-word, keep it. Otherwise take important words (proper nouns) up to length 12.
+				if(!s) return '';
+				const cleaned = s.replace(/[‘’“”&.,!\-\/]+/g,' ').replace(/\s+/g,' ').trim();
+				const parts = cleaned.split(' ').filter(Boolean);
+				// prefer words with capital letters (proper nouns)
+				const proper = parts.filter(w=>/[A-Z]/.test(w));
+				let pick = proper.length? proper[0] : parts.slice(0,2).join(' ');
+				pick = pick.replace(/[^A-Za-z]/g,'').toUpperCase();
+				if(pick.length>12) pick = pick.slice(0,12);
+				return pick;
+			}
+
+			function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+			// State
+			const state = { placements: [], solved: {}, total: entries.length, started:false };
+
+			document.getElementById('exportBtn').addEventListener('click', exportPNG);
+
+			// normalize: keep A-Z only uppercase
+			function normalize(s){ return (s||'').toUpperCase().replace(/[^A-Z]/g,''); }
+
+			// placement: mix vertical & horizontal by alternating preference
+			function buildCrossword(words){
+				// sort by length descending
+				words = words.slice().sort((a,b)=>b.text.length - a.text.length);
+				const grid = Array.from({length:GRID_SIZE}, ()=>Array(GRID_SIZE).fill(''));
+				const placed = [];
+
+				function canPlaceAt(x,y,dir,word){
+					for(let i=0;i<word.length;i++){
+						const cx = x + (dir==='across'?i:0);
+						const cy = y + (dir==='across'?0:i);
+						if(cx<0||cy<0||cx>=GRID_SIZE||cy>=GRID_SIZE) return false;
+						const cell = grid[cy][cx];
+						if(cell!=='' && cell!==word[i]) return false;
+					}
+					return true;
+				}
+
+				function placeAt(x,y,dir,word,meta){
+					for(let i=0;i<word.length;i++){
+						const cx = x + (dir==='across'?i:0);
+						const cy = y + (dir==='across'?0:i);
+						grid[cy][cx] = word[i];
+					}
+					placed.push(Object.assign({x,y,dir,word},meta||{}));
+				}
+
+				if(words.length===0) return {grid,placed};
+				// place first word roughly centered (choose across for first)
+				const first = words[0];
+				const startX = Math.floor((GRID_SIZE-first.text.length)/2);
+				const startY = Math.floor(GRID_SIZE/2);
+				placeAt(startX,startY,'across',first.text,{clue:first.clue,raw:first.raw});
+
+				for(let i=1;i<words.length;i++){
+					const w = words[i];
+					let placedThis=false;
+					// try to intersect existing placed words (alternate preferred direction)
+					for(const p of placed){
+						for(let pi=0;pi<p.word.length;pi++){
+							for(let wi=0;wi<w.text.length;wi++){
+								if(p.word[pi]!==w.text[wi]) continue;
+								const dir = (i%2===0)? 'down':'across';
+								const crossX = p.x + (p.dir==='across'?pi:0);
+								const crossY = p.y + (p.dir==='across'?0:pi);
+								const x = crossX;
+								const y = crossY - wi;
+								if(canPlaceAt(x,y,dir,w.text)){
+									placeAt(x,y,dir,w.text,{clue:w.clue,raw:w.raw}); placedThis=true; break;
+								}
+								// fallback try across
+								const dir2 = 'across';
+								const x2 = crossX - wi;
+								const y2 = crossY;
+								if(canPlaceAt(x2,y2,dir2,w.text)){
+									placeAt(x2,y2,dir2,w.text,{clue:w.clue,raw:w.raw}); placedThis=true; break;
+								}
+							}
+							if(placedThis) break;
+						}
+						if(placedThis) break;
+					}
+					if(!placedThis){
+						// try to place vertically in any column
+						outer: for(let cx=0;cx<GRID_SIZE;cx++){
+							for(let ry=0;ry<=GRID_SIZE - w.text.length;ry++){
+								if(canPlaceAt(cx,ry,'down',w.text)){ placeAt(cx,ry,'down',w.text,{clue:w.clue,raw:w.raw}); placedThis=true; break outer; }
+							}
+						}
+						// if still not placed, try across scan
+						if(!placedThis){
+							outer2: for(let ry=0;ry<GRID_SIZE;ry++){
+								for(let rx=0;rx<=GRID_SIZE - w.text.length;rx++){
+									if(canPlaceAt(rx,ry,'across',w.text)){ placeAt(rx,ry,'across',w.text,{clue:w.clue,raw:w.raw}); placedThis=true; break outer2; }
+								}
+							}
+						}
+					}
+				}
+				return {grid,placed};
+			}
+
+			function renderBoard({grid,placed}){
+				const container = document.getElementById('boardContainer');
+				container.innerHTML = '';
+				// compute bounding box
+				let minx=GRID_SIZE, miny=GRID_SIZE, maxx=0, maxy=0;
+				for(let y=0;y<GRID_SIZE;y++) for(let x=0;x<GRID_SIZE;x++) if(grid[y][x] && grid[y][x]!==""){
+					minx=Math.min(minx,x); miny=Math.min(miny,y); maxx=Math.max(maxx,x); maxy=Math.max(maxy,y);
+				}
+				if(maxx<minx){ container.innerHTML = '<div class="note">No words placed. Try shorter answers.</div>'; return; }
+				const rows = maxy-miny+1, cols = maxx-minx+1;
+				const tbl = document.createElement('table'); tbl.className='grid';
+				// create number map for placed words
+				placed.sort((a,b)=> (a.y - b.y) || (a.x - b.x));
+				placed.forEach((p,idx)=> p.num = idx+1);
+				for(let y=miny;y<=maxy;y++){
+					const tr = document.createElement('tr');
+					for(let x=minx;x<=maxx;x++){
+						const td = document.createElement('td');
+						const ch = grid[y][x] || '';
+						if(ch==='') td.className='empty';
+						// find number if a word starts here
+						const start = placed.find(p=> (p.x===x && p.y===y) );
+						if(start){
+							const num = document.createElement('div'); num.className='cell-number'; num.textContent = start.num; td.appendChild(num);
+						}
+						const span = document.createElement('div'); span.className='cell-letter';
+						// store solution but hide letters in puzzle view
+						span.dataset.solution = ch;
+						span.textContent = '';
+						td.appendChild(span);
+						tr.appendChild(td);
+					}
+					tbl.appendChild(tr);
+				}
+				// expose bounding offsets so solve inputs can update table cells
+				tbl.setAttribute('data-minx', String(minx));
+				tbl.setAttribute('data-miny', String(miny));
+				container.appendChild(tbl);
+
+				// build clue lists
+				const acrossList = document.getElementById('acrossList');
+				const downList = document.getElementById('downList');
+				acrossList.innerHTML = '';
+				downList.innerHTML = '';
+				placed.filter(p=>p.dir==='across').forEach(p=>{
+					const el = document.createElement('div'); el.className='clue-item';
+					el.innerHTML = `<strong>${p.num}.</strong> ${escapeHtml(p.clue)} <span class="note">(${p.word.length})</span>`;
+					acrossList.appendChild(el);
+				});
+				placed.filter(p=>p.dir==='down').forEach(p=>{
+					const el = document.createElement('div'); el.className='clue-item';
+					el.innerHTML = `<strong>${p.num}.</strong> ${escapeHtml(p.clue)} <span class="note">(${p.word.length})</span>`;
+					downList.appendChild(el);
+				});
+
+				// build solve inputs
+				const solveList = document.getElementById('solveList');
+				solveList.innerHTML = '';
+				placed.forEach(p=>{
+					const wrap = document.createElement('div'); wrap.className='clue-item';
+					const idx = p.num;
+					wrap.innerHTML = `<strong>${idx}.</strong> ${escapeHtml(p.clue)} <span class='note'>(${p.word.length})</span><div><input aria-label='Answer for clue ${idx}' data-solution='${p.word}' data-num='${idx}' data-dir='${p.dir}' data-x='${p.x}' data-y='${p.y}' class='solve-input' maxlength='${p.word.length}' placeholder='${'_'.repeat(p.word.length)}' style='text-transform:uppercase;padding:8px;border-radius:8px;border:1px solid #eee;margin-top:6px;width:100%;font-weight:600;letter-spacing:2px' /></div>`;
+					solveList.appendChild(wrap);
+				});
+
+				// wire solve inputs to update grid
+				document.querySelectorAll('.solve-input').forEach(inp=>{
+					inp.addEventListener('input', (e)=>{
+						const solution = e.target.dataset.solution;
+						let v = e.target.value.toUpperCase().replace(/[^A-Z]/g,'');
+						if(v.length > solution.length) v = v.slice(0,solution.length);
+						e.target.value = v;
+						const placedEntry = placed.find(p=>p.num === parseInt(e.target.dataset.num,10));
+						if(!placedEntry) return;
+						// update table letters
+						for(let i=0;i<placedEntry.word.length;i++){
+							const gx = placedEntry.x + (placedEntry.dir==='across'?i:0);
+							const gy = placedEntry.y + (placedEntry.dir==='across'?0:i);
+							const char = v[i] || '';
+							const board = document.querySelector('#boardContainer table');
+							if(board){
+								const rows = board.rows;
+								const offsetX = parseInt(board.getAttribute('data-minx')||0,10);
+								const offsetY = parseInt(board.getAttribute('data-miny')||0,10);
+								const rx = gy - offsetY;
+								const cx = gx - offsetX;
+								if(rows[rx] && rows[rx].cells[cx]){
+									const span = rows[rx].cells[cx].querySelector('.cell-letter');
+									if(span) span.textContent = char;
+								}
+							}
+						}
+						// validation styling
+						if(v.length === solution.length){
+							if(v === solution){
+								e.target.classList.add('correct');
+								e.target.classList.remove('incorrect');
+								markWordCorrect(placedEntry, true);
+								state.solved[placedEntry.num] = true;
+							}else{
+								e.target.classList.remove('correct');
+								e.target.classList.add('incorrect');
+								markWordCorrect(placedEntry, false);
+								delete state.solved[placedEntry.num];
+							}
+						}else{
+							e.target.classList.remove('correct','incorrect');
+							markWordCorrect(placedEntry, false);
+							delete state.solved[placedEntry.num];
+						}
+						updateProgress();
+					});
+				});
+				updateProgress();
+			}
+
+			function markWordCorrect(word, isCorrect){
+				const board = document.querySelector('#boardContainer table');
+				if(!board) return;
+				const offsetX = parseInt(board.getAttribute('data-minx')||0,10);
+				const offsetY = parseInt(board.getAttribute('data-miny')||0,10);
+				for(let i=0;i<word.word.length;i++){
+					const gx = word.x + (word.dir==='across'?i:0);
+					const gy = word.y + (word.dir==='across'?0:i);
+					const rx = gy - offsetY;
+					const cx = gx - offsetX;
+					const cell = board.rows[rx]?.cells[cx];
+					if(cell){
+						cell.classList.toggle('correct-word', isCorrect);
+					}
+				}
+			}
+
+			const progressImages = ['cover.jpg','rn1.jpg','rn2.jpg','rn3.jpg','rn4.jpg','rn5.jpg','rn6.jpg','rn7.jpg','rn8.jpg','rn9.jpg','rn10.jpg','rn11.jpg','rn12.jpg','rn13.jpg','rn14.jpg','rn15.jpg','rn16.jpg','rn17.jpg','rn18.jpg','rn19.jpg'];
+
+			function updateProgress(){
+				const solved = Object.keys(state.solved).length;
+				const progressEl = document.getElementById('progress');
+				if(progressEl) progressEl.textContent = `Solved ${solved}/${state.total}`;
+				const imgEl = document.getElementById('progressImg');
+				if(imgEl){
+					const idx = Math.min(solved, progressImages.length-1);
+					imgEl.src = `images/${progressImages[idx]}`;
+					imgEl.alt = `Progress image stage ${idx}`;
+				}
+			}
+
+			// export as SVG
+			async function exportPNG(){
+				const container = document.getElementById('boardContainer');
+				const outer = container.cloneNode(true);
+				const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='1200'><foreignObject width='100%' height='100%'>${new XMLSerializer().serializeToString(outer)}</foreignObject></svg>`;
+				const blob = new Blob([svg], {type:'image/svg+xml;charset=utf-8'});
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a'); a.href = url; a.download = 'birthday-crossword.svg'; document.body.appendChild(a); a.click(); a.remove();
+				URL.revokeObjectURL(url);
+			}
+
+			// Deferred build until Begin pressed
+			document.getElementById('beginBtn').addEventListener('click', ()=>{
+				if(state.started) return;
+				state.started = true;
+				document.getElementById('homeScreen').style.display='none';
+				document.getElementById('appShell').style.display='flex';
+				const words = entries.map(e => ({clue:e.clue, text:e.solution, raw:e.solution}));
+				const built = buildCrossword(words);
+				state.placements = built.placed;
+				renderBoard(built);
+			});
+
+			// Tab handling
+			document.getElementById('tabPuzzle').addEventListener('click', ()=>{
+				document.getElementById('puzzleView').style.display='block';
+				document.getElementById('solveView').style.display='none';
+			});
+			document.getElementById('tabSolve').addEventListener('click', ()=>{
+				document.getElementById('puzzleView').style.display='none';
+				document.getElementById('solveView').style.display='block';
+			});
+
+
+		</script>
+	</body>
+</html>
+
